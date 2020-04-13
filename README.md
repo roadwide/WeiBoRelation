@@ -24,8 +24,8 @@ WBID是要查看的微博用户的ID，有些用户是weibo.com/u/后面的一�
 
 # Requirements
 
-`requests==2.21.0`
-`beautifulsoup4==4.9.0`
+> requests==2.21.0
+> beautifulsoup4==4.9.0
 
 # Tips
 
