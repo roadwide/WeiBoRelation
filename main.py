@@ -3,7 +3,7 @@ from WEIBO.Find import Find
 
 if __name__ == '__main__':
     # 只要是一个能登陆的微博账号就行
-    w = WEIBO("username", "password")
+    w = WEIBO()
     w.login()
     # 要查询的微博ID
     w.WBID = "WBID"

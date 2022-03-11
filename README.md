@@ -1,6 +1,11 @@
 # WeiBoRelation
 微博关系分析/爬取微博的所有关注和所有粉丝
 
+# Warnning
+当前版本的代码存在一些问题，例如获取粉丝时会有重复。以及有些函数不够鲁棒
+因为之前的API几乎不能用了，所以花了些时间更新了一下，但现在又没太多精力搞这个。
+总之就是，现在的代码勉强能实现一些功能，但很不完美。所以仅供参考。
+
 # Feature
 
 - 获取指定用户关注的所有人的昵称、粉丝数、个人主页URL
@@ -10,7 +15,7 @@
 # Usage
 
 ```python
-    w = WEIBO("username", "password")
+    w = WEIBO()
     w.WBID = "WBID"
     w.login()
     w.get_all_follow(max_fans=1000)
@@ -57,6 +62,7 @@ WBID是要查看的微博用户的ID，有些用户是weibo.com/u/后面的一�
 # Update
 
 [2020-04-18]更新找潜在可能认识的人
+[2022-03-11]更新了部分API，不需要登录即可获取关注/粉丝信息
 
 # SomeThingMore
 

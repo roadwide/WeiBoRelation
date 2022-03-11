@@ -7,9 +7,7 @@ import os
 
 
 class WEIBO:
-    def __init__(self, username, password):
-        self.username = username
-        self.password = password
+    def __init__(self):
         self.s = requests.session()
         self.isLogin = False
         self.WBID = None
@@ -29,22 +27,7 @@ class WEIBO:
 
     # login
     def login(self):
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.108 Safari/537.36',
-            'Referer': 'https://passport.weibo.cn/signin/login?entry=mweibo&res=wel&wm=3349&r=https%3A%2F%2Fm.weibo.cn%2F',
-        }
         self.s = requests.session()
-        login_status = self.s.post("https://passport.weibo.cn/sso/login",
-                                   data={
-                                       "username": self.username,
-                                       "password": self.password
-                                   },
-                                   headers=headers)
-        login_req_json = json.loads(login_status.text)
-        login_code = login_req_json['retcode']
-        if (login_code == 20000000):
-            print("login successfully")
-            self.isLogin = True
 
     # request until success
     def getReq(self, url, errorinfo):
@@ -64,84 +47,84 @@ class WEIBO:
                 time.sleep(self.T)
         return req
 
-    # get how many pages followed
-    # 有些用户的关注页是正常的，有些只有20页，原因不详
-    # 这些用户在桌面端网页到第六页也会提示由于系统限制，你无法查看所有关注，如有疑问请点击
-    def get_follow_pages(self):
-        Pages = 0
-        if (self.isLogin == False):
-            print("not login")
-        else:
-            print("正在获取{}关注页数".format(self.WBID))
-            url = "https://weibo.cn/" + self.WBID + "/follow"
-            errorinfo = "获取关注页数时出现异常"
-            req = self.getReq(url, errorinfo)
-            html = req.text
-            soup = BeautifulSoup(html, "html.parser")
-            # 当关注的人数只有一页时没有跳转页的按钮，也就无法获取页数
-            inputElem = soup.find(attrs={"name": "mp"})
-            if (inputElem == None):
-                Pages = 1
-            else:
-                Pages = eval(inputElem['value'])
-        return Pages
-
     # get a page users's data
-    def get_follow(self, page, max_fans=None):
-        GroupUser = []
-        if (self.isLogin == False):
-            print("not login")
+    def get_follow(self, page):
+        print("{}正在获取第{}页关注".format(self.WBID, page))
+        user_url = "https://m.weibo.cn/api/container/getIndex?containerid=231051_-_followers_-_" + self.WBID
+        url = user_url + "&page=" + str(page)
+        errorinfo = "获取第{}页关注时出现异常".format(page)
+        req = self.getReq(url, errorinfo)
+        txt = req.text
+
+        follows_json = json.loads(txt)
+        # 第一页要推送相关用户所以索引有两个，第二页开始不推送相关用户，只有一个索引
+        # 有的会推送一类，有的推送两类，len(fans_data)等于2或3
+        # 推送：这些大V用户关注了她、她的粉丝中你可能感兴趣的人、32个教育博主关注了他
+        follows_data = follows_json['data']['cards']
+
+        if (len(follows_data) == 0):
+            print("没有更多粉丝")
+            return None
+        # 因为发现有的推送两个有的推送三个，所以直接取最后一个
         else:
-            print("{}正在获取第{}页关注".format(self.WBID, page))
-            url = "https://weibo.cn/" + self.WBID + "/follow?page=" + str(page)
-            errorinfo = "获取第{}页关注时出现异常".format(page)
-            req = self.getReq(url, errorinfo)
-            html = req.text
-            soup = BeautifulSoup(html, "html.parser")
-            table_list = soup.find_all("table")
-            for i in table_list:
-                # 起初用contents变成列表，但是发现有V认证的用户会多一个标签
-                UserData = i.tr.find_all("td")[1]
-                # 有意思，如果id里有粉丝两个字会出错
-                FansCount = re.findall("<br\/>粉丝(.+?)人", str(UserData))[0]
-                FansCount = eval(FansCount)
-                # 直接从这里排除，减少后续请求获取uid
-                if max_fans and FansCount > max_fans:
-                    continue
-                NickName = UserData.a.string
-                URL = UserData.a["href"]
-                errorinfo = "获取个人信息{}时出现异常".format(URL)
-                profile_req = self.getReq(URL, errorinfo)
-                profile_html = profile_req.text
-                uid = re.findall("\/([0-9]+?)\/info", profile_html)[0]
-                GroupUser.append((NickName, FansCount, URL, uid))
-        return GroupUser
+            card_group = follows_data[-1]['card_group']
+        # 由于微博反垃圾屏蔽一部分粉丝，所以真实粉丝会小于检测到的
+        card_type = card_group[0]['card_type']
+        if card_type != 10:
+            print("没有更多关注")
+            return None
+        UserData = []
+        for i in card_group:
+            user = i['user']
+            if (user == None):
+                continue
+            nickname = user['screen_name']
+            fans_count = user['followers_count']
+            profile_url = user['profile_url']
+            uid = re.findall("uid=([0-9]+?)&", profile_url)[0]
+            UserData.append((nickname, fans_count, profile_url, uid))
+        return UserData
 
     # get all followed
     def get_all_follow(self, max_fans=None):
         if os.path.isfile(self.path + self.WBID + "_followed.txt"):
             print("{}关注数据已存在".format(self.WBID))
             return
-        Pages = self.get_follow_pages()
+        Pages = self.get_follows_num() // 20 + 1
         # range函数是前闭后开，所以要Pages+1
         # 那等于说之前都少获取一页数据
         for i in range(1, Pages + 1):
-            GroupData = self.get_follow(i, max_fans=max_fans)
+            GroupData = self.get_follow(i)
+            if (GroupData == None) :
+                continue
             for userdata in GroupData:
                 nickname, fanscount, url, uid = userdata
                 # 跳过粉丝数超过一定数的用户，在get_follow中实现，减少获取uid的请求
-                # if max_fans and fanscount>max_fans:
-                #     continue
+                if (fanscount[-1] == '万' or fanscount[-1] == '亿'):
+                    continue
+                fanscount = eval(fanscount)
+                if max_fans and fanscount>max_fans:
+                    continue
                 with open(self.path + self.WBID + "_followed.txt", "a+", encoding="utf-8") as f:
                     print(nickname)
                     print("nickname:{}\tfanscount:{}\turl:{}\tuid:{}".format(nickname, fanscount, url, uid), file=f)
 
+    # 获得用户信息
+    def getUserInfo(self):
+        UserInfo = self.s.get("https://m.weibo.cn/profile/info?uid={}".format(self.WBID)).text
+        UserInfo = json.loads(UserInfo)
+        return UserInfo
+
+    # get follows number
+    def get_follows_num(self):
+        UserInfo = self.getUserInfo()
+        follows_num = UserInfo['data']['user']['follow_count']
+        return follows_num
+
     # get fans number
     def get_fans_num(self):
-        html = self.s.get("https://weibo.cn/{}/profile".format(self.WBID)).text
-        soup = BeautifulSoup(html, "html.parser")
-        user_div = soup.find("div", class_="u")
-        fans_num = re.findall(">粉丝\[(.+?)\]<", str(user_div))[0]
+        UserInfo = self.getUserInfo()
+        fans_num = UserInfo['data']['user']['followers_count']
         return eval(fans_num)
 
     # get a page fans's data
@@ -176,6 +159,8 @@ class WEIBO:
         UserData = []
         for i in card_group:
             user = i['user']
+            if (user == None):
+                continue
             nickname = user['screen_name']
             fans_count = user['followers_count']
             profile_url = user['profile_url']
@@ -202,6 +187,9 @@ class WEIBO:
             for userdata in GroupData:
                 nickname, fanscount, url, uid = userdata
                 # 跳过粉丝数超过一定数的用户
+                if (fanscount[-1] == '万' or fanscount[-1] == '亿'):
+                    continue
+                fanscount = eval(fanscount)
                 if max_fans and fanscount > max_fans:
                     continue
                 with open(self.path + self.WBID + "_fans.txt", "a+", encoding="utf-8") as f:
